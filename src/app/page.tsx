@@ -121,8 +121,7 @@ export default function Page() {
       </div>
 
       <p style={{ fontSize: 12, opacity: 0.6, marginTop: 20 }}>
-        Security notice: your Whop API key is never exposed.  
-        All requests go through `/api/*` on the server side.
+        Security notice: your Whop API key and member list is never exposed. 
       </p>
     </main>
   );
