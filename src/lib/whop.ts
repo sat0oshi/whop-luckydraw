@@ -1,14 +1,20 @@
 const BASE = "https://api.whop.com";
 
 /**
- * Utilise l'endpoint v5/app/memberships (contexte app Whop).
- * Filtre par statut "active" par défaut.
- * Pagination page/per (per ≤ 50).
+ * Uses the endpoint v5/app/memberships (Whop App context)
+ * Filters by status "active" by default.
+ * Supports pagination (page/per, per ≤ 50)
  */
 export type WhopMembership = {
   id: string;
   status?: string;
-  user?: { id?: string; name?: string; username?: string; email?: string };
+  display_name?: string;
+  user?: {
+    id?: string;
+    name?: string;
+    username?: string;
+    email?: string;
+  };
 };
 
 export async function listActiveMemberships(options: {
@@ -27,6 +33,7 @@ export async function listActiveMemberships(options: {
   };
 
   const out: WhopMembership[] = [];
+
   for (let page = 1; page <= maxPages; page++) {
     const url = new URL("/v5/app/memberships", BASE);
     url.searchParams.set("per", String(per));
@@ -35,17 +42,28 @@ export async function listActiveMemberships(options: {
     if (options.companyId) url.searchParams.set("company_id", options.companyId);
 
     const res = await fetch(url, { headers, cache: "no-store" });
-    if (!res.ok) throw new Error(`Whop /v5/app/memberships HTTP ${res.status}: ${await res.text()}`);
+    if (!res.ok)
+      throw new Error(
+        `Whop /v5/app/memberships HTTP ${res.status}: ${await res.text()}`
+      );
+
     const json = await res.json();
     const data = (json.data || []) as WhopMembership[];
     out.push(...data);
+
     const pagination = json.pagination || {};
     if (!pagination.next_page || data.length === 0) break;
   }
 
-  return out.map(m => ({
-    id: m.user?.id || m.id,
-    name: m.user?.name || m.user?.username || m.user?.email || (m.id ?? "Member"),
-    email: m.user?.email || null,
-  }));
+  // 🧠 Smart normalization for readable names
+  return out.map((m) => {
+    const u = m.user || {};
+    const name =
+      m.display_name ||
+      u.name ||
+      u.username ||
+      (u.email ? u.email.split("@")[0] : null) ||
+      `Member ${m.id.slice(-4)}`;
+    return { id: m.id, name, email: u.email || null };
+  });
 }
