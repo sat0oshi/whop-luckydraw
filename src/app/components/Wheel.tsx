@@ -1,9 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
-
-function genColors(n: number) {
-  return Array.from({ length: n }, (_, i) => `hsl(${(i * (360 / n)) | 0} 85% 55%)`);
-}
+import { useEffect, useRef, useState } from "react";
 
 export default function Wheel({
   labels,
@@ -14,97 +10,110 @@ export default function Wheel({
   highlight?: string;
   onSpinEnd?: () => void;
 }) {
-  const N = Math.max(1, labels.length);
-  const colors = useMemo(() => genColors(N), [N]);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [spinning, setSpinning] = useState(false);
   const [angle, setAngle] = useState(0);
-  const wheelRef = useRef<HTMLDivElement>(null);
 
-  const targetIndex = useMemo(() => {
-    if (!highlight) return null;
-    const i = labels.findIndex((x) => x === highlight);
-    return i >= 0 ? i : null;
-  }, [labels, highlight]);
-
+  // spin animation
   useEffect(() => {
-    if (targetIndex == null) return;
-    const slice = 360 / N;
-    const center = slice / 2;
-    const spins = 6;
-    const targetDeg = spins * 360 + targetIndex * slice + center;
+    if (!spinning) return;
+    let frame: number;
+    const spinDuration = 3000;
+    const spinSpeed = 20 + Math.random() * 10;
+    const start = performance.now();
 
-    requestAnimationFrame(() => {
-      if (!wheelRef.current) return;
-      wheelRef.current.style.transition = "transform 3s cubic-bezier(0.22,1,0.36,1)";
-      setAngle(-targetDeg);
+    const animate = (t: number) => {
+      const elapsed = t - start;
+      const progress = Math.min(elapsed / spinDuration, 1);
+      const easeOut = 1 - Math.pow(1 - progress, 3);
+      setAngle(spinSpeed * 100 * (1 - easeOut));
+      if (progress < 1) frame = requestAnimationFrame(animate);
+      else {
+        setSpinning(false);
+        onSpinEnd?.();
+      }
+    };
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, [spinning]);
+
+  // draw wheel
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d")!;
+    const size = canvas.width;
+    const radius = size / 2;
+    ctx.clearRect(0, 0, size, size);
+
+    const colors = [
+      "#F87171", "#FACC15", "#4ADE80", "#60A5FA", "#A78BFA",
+      "#FB7185", "#FBBF24", "#34D399", "#38BDF8", "#C084FC",
+      "#F472B6", "#FDE68A", "#5EEAD4", "#93C5FD", "#E879F9",
+    ];
+
+    const slice = (2 * Math.PI) / labels.length;
+    ctx.save();
+    ctx.translate(radius, radius);
+    ctx.rotate((angle * Math.PI) / 180);
+
+    labels.forEach((label, i) => {
+      const startAngle = i * slice;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, radius, startAngle, startAngle + slice);
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.fill();
+
+      ctx.save();
+      ctx.rotate(startAngle + slice / 2);
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#0b0f14";
+      ctx.font = "bold 16px Arial";
+      ctx.fillText(label.slice(0, 10), radius - 10, 5);
+      ctx.restore();
     });
 
-    const to = setTimeout(() => onSpinEnd && onSpinEnd(), 3100);
-    return () => clearTimeout(to);
-  }, [targetIndex, N, onSpinEnd]);
+    ctx.restore();
+
+    // pointer
+    ctx.beginPath();
+    ctx.moveTo(radius - 10, 0);
+    ctx.lineTo(radius + 20, 10);
+    ctx.lineTo(radius + 20, -10);
+    ctx.fillStyle = "#FFD700";
+    ctx.fill();
+  }, [labels, angle]);
 
   return (
-    <div style={{ position: "relative", width: 420, height: 420 }}>
-      <div style={{
-        position: "absolute",
-        left: "50%",
-        top: -6,
-        transform: "translateX(-50%)",
-        width: 0,
-        height: 0,
-        borderLeft: "10px solid transparent",
-        borderRight: "10px solid transparent",
-        borderBottom: "18px solid #facc15",
-        filter: "drop-shadow(0 2px 2px rgba(0,0,0,0.4))",
-        zIndex: 10,
-      }} />
-      <div
-        ref={wheelRef}
+    <div
+      style={{ position: "relative", cursor: "pointer" }}
+      onClick={() => !spinning && setSpinning(true)}
+    >
+      <canvas
+        ref={canvasRef}
+        width={400}
+        height={400}
         style={{
-          width: "100%",
-          height: "100%",
           borderRadius: "50%",
-          border: "10px solid rgba(255,255,255,0.08)",
-          boxShadow: "inset 0 0 40px rgba(0,0,0,0.35), 0 15px 60px rgba(0,0,0,0.45)",
-          overflow: "hidden",
-          transform: `rotate(${angle}deg)`,
+          boxShadow: "0 0 30px rgba(34,211,238,0.25)",
+          background: "#0b0f14",
+        }}
+      />
+      <p
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          color: "#fff",
+          fontSize: 18,
+          fontWeight: 700,
+          textShadow: "0 2px 10px rgba(0,0,0,0.4)",
         }}
       >
-        {labels.map((label, i) => {
-          const slice = 360 / N;
-          const rotate = i * slice;
-          return (
-            <div
-              key={i}
-              style={{
-                position: "absolute",
-                width: "50%",
-                height: "50%",
-                top: "50%",
-                left: "50%",
-                transformOrigin: "0% 0%",
-                transform: `translate(-50%,-50%) rotate(${rotate}deg) skewY(${90 - slice}deg)`,
-                background: colors[i],
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "flex-end",
-                paddingRight: 12,
-              }}
-            >
-              <span style={{
-                transform: `skewY(${-(90 - slice)}deg)`,
-                fontWeight: 800,
-                color: "#001318",
-                textShadow: "0 1px 0 rgba(255,255,255,0.6)",
-                fontSize: 12,
-                maxWidth: 150,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}>{label}</span>
-            </div>
-          );
-        })}
-      </div>
+        {highlight || "Tap to spin"}
+      </p>
     </div>
   );
 }
