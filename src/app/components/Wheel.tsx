@@ -1,119 +1,134 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-export default function Wheel({
-  labels,
-  highlight,
-  onSpinEnd,
-}: {
+type Props = {
   labels: string[];
+  /** when this changes, the wheel spins to that label */
   highlight?: string;
   onSpinEnd?: () => void;
-}) {
+};
+
+export default function Wheel({ labels, highlight, onSpinEnd }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [spinning, setSpinning] = useState(false);
   const [angle, setAngle] = useState(0);
 
-  // spin animation
+  // Compute index of target label
+  const targetIndex = useMemo(() => {
+    if (!highlight) return null;
+    const i = labels.findIndex((x) => x === highlight);
+    return i >= 0 ? i : null;
+  }, [labels, highlight]);
+
+  // Spin to the target whenever highlight changes
   useEffect(() => {
-    if (!spinning) return;
-    let frame: number;
-    const spinDuration = 3000;
-    const spinSpeed = 20 + Math.random() * 10;
+    if (targetIndex == null || labels.length === 0) return;
+
+    const sliceDeg = 360 / labels.length;
+    const sliceCenter = sliceDeg / 2;
+    const spins = 6; // full rotations
+    const targetDeg = spins * 360 + targetIndex * sliceDeg + sliceCenter;
+
+    let raf = 0;
     const start = performance.now();
+    const dur = 1100 + labels.length * 60; // a bit dynamic
 
     const animate = (t: number) => {
-      const elapsed = t - start;
-      const progress = Math.min(elapsed / spinDuration, 1);
-      const easeOut = 1 - Math.pow(1 - progress, 3);
-      setAngle(spinSpeed * 100 * (1 - easeOut));
-      if (progress < 1) frame = requestAnimationFrame(animate);
-      else {
-        setSpinning(false);
-        onSpinEnd?.();
-      }
+      const p = Math.min((t - start) / dur, 1);
+      const ease = 1 - Math.pow(1 - p, 3); // ease-out-cubic
+      setAngle(-targetDeg * ease);
+      if (p < 1) raf = requestAnimationFrame(animate);
+      else onSpinEnd && onSpinEnd();
     };
-    frame = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frame);
-  }, [spinning]);
+    raf = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(raf);
+  }, [targetIndex, labels.length, onSpinEnd]);
 
-  // draw wheel
+  // Draw wheel on each angle/labels change
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d")!;
     const size = canvas.width;
-    const radius = size / 2;
+    const r = size / 2;
+
+    // HiDPI crispness
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    if (canvas.width !== size * dpr) {
+      canvas.width = size * dpr;
+      canvas.height = size * dpr;
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
     ctx.clearRect(0, 0, size, size);
 
+    // background & rim
+    ctx.save();
+    ctx.translate(r, r);
+    ctx.rotate((angle * Math.PI) / 180);
+    ctx.shadowColor = "rgba(0,0,0,0.35)";
+    ctx.shadowBlur = 18;
+
     const colors = [
-      "#F87171", "#FACC15", "#4ADE80", "#60A5FA", "#A78BFA",
-      "#FB7185", "#FBBF24", "#34D399", "#38BDF8", "#C084FC",
-      "#F472B6", "#FDE68A", "#5EEAD4", "#93C5FD", "#E879F9",
+      "#fde047","#60a5fa","#f472b6","#34d399","#fca5a5",
+      "#a78bfa","#22d3ee","#fb923c","#93c5fd","#f9a8d4",
+      "#86efac","#fca5a5","#c4b5fd","#67e8f9","#f59e0b",
     ];
 
-    const slice = (2 * Math.PI) / labels.length;
-    ctx.save();
-    ctx.translate(radius, radius);
-    ctx.rotate((angle * Math.PI) / 180);
+    const n = Math.max(1, labels.length);
+    const slice = (2 * Math.PI) / n;
 
-    labels.forEach((label, i) => {
-      const startAngle = i * slice;
+    for (let i = 0; i < n; i++) {
+      const start = i * slice;
       ctx.beginPath();
       ctx.moveTo(0, 0);
-      ctx.arc(0, 0, radius, startAngle, startAngle + slice);
+      ctx.arc(0, 0, r - 8, start, start + slice);
+      ctx.closePath();
       ctx.fillStyle = colors[i % colors.length];
       ctx.fill();
 
+      // text
       ctx.save();
-      ctx.rotate(startAngle + slice / 2);
+      ctx.rotate(start + slice / 2);
       ctx.textAlign = "right";
       ctx.fillStyle = "#0b0f14";
-      ctx.font = "bold 16px Arial";
-      ctx.fillText(label.slice(0, 10), radius - 10, 5);
+      ctx.font = "bold 14px system-ui, sans-serif";
+      const text = (labels[i] || "").slice(0, 14);
+      ctx.fillText(text, r - 18, 5);
       ctx.restore();
-    });
-
+    }
     ctx.restore();
+
+    // ring
+    ctx.beginPath();
+    ctx.arc(r, r, r - 6, 0, 2 * Math.PI);
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = "rgba(255,255,255,0.1)";
+    ctx.stroke();
 
     // pointer
     ctx.beginPath();
-    ctx.moveTo(radius - 10, 0);
-    ctx.lineTo(radius + 20, 10);
-    ctx.lineTo(radius + 20, -10);
-    ctx.fillStyle = "#FFD700";
+    ctx.moveTo(r - 10, 6);
+    ctx.lineTo(r + 20, 0);
+    ctx.lineTo(r - 10, -6);
+    ctx.closePath();
+    ctx.fillStyle = "#facc15";
+    ctx.shadowColor = "rgba(0,0,0,0.35)";
+    ctx.shadowBlur = 8;
     ctx.fill();
-  }, [labels, angle]);
+  }, [angle, labels]);
 
   return (
-    <div
-      style={{ position: "relative", cursor: "pointer" }}
-      onClick={() => !spinning && setSpinning(true)}
-    >
-      <canvas
-        ref={canvasRef}
-        width={400}
-        height={400}
-        style={{
-          borderRadius: "50%",
-          boxShadow: "0 0 30px rgba(34,211,238,0.25)",
-          background: "#0b0f14",
-        }}
-      />
-      <p
-        style={{
-          position: "absolute",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          color: "#fff",
-          fontSize: 18,
-          fontWeight: 700,
-          textShadow: "0 2px 10px rgba(0,0,0,0.4)",
-        }}
-      >
-        {highlight || "Tap to spin"}
-      </p>
-    </div>
+    <canvas
+      ref={canvasRef}
+      width={420}
+      height={420}
+      style={{
+        width: 420,
+        height: 420,
+        borderRadius: "50%",
+        background: "#0b0f14",
+        boxShadow: "0 16px 50px rgba(0,0,0,0.45), inset 0 0 40px rgba(0,0,0,0.25)",
+      }}
+    />
   );
 }
