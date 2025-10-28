@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 export const metadata = {
   title: "WHOP Lucky Draw",
-  description: "Tirage au sort Whop — Prod safe",
+  description: "Server-side raffle for Whop communities",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
