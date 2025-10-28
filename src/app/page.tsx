@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import Wheel from "./components/Wheel";
 
-type Member = { id: string; name: string; email?: string | null };
+type Member = { id: string; name: string; email?: string | null; userId?: string };
 
 export default function Page() {
   const [loading, setLoading] = useState(false);
@@ -10,6 +10,12 @@ export default function Page() {
   const [winners, setWinners] = useState<Member[]>([]);
   const [count, setCount] = useState(1);
   const [spinName, setSpinName] = useState<string | undefined>(undefined);
+  const [toast, setToast] = useState<string | null>(null);
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 1600);
+  }
 
   async function loadMembers() {
     try {
@@ -27,9 +33,9 @@ export default function Page() {
     }
   }
 
-  async function draw() {
+  async function selectWinner() {
     try {
-      if (!members.length) return alert("Please load members first");
+      if (!members.length) return alert("Load members first");
       if (count < 1) return alert("Invalid number of winners");
       const res = await fetch(`/api/draw`, {
         method: "POST",
@@ -40,8 +46,7 @@ export default function Page() {
       if (json.error) throw new Error(json.error);
       const ws: Member[] = json.winners || [];
       setWinners(ws);
-      const winnerName = ws[0]?.name;
-      setSpinName(winnerName);
+      setSpinName(ws[0]?.name); // spin to the first winner
     } catch (e: any) {
       alert(e.message || "Draw error");
     }
@@ -57,6 +62,20 @@ export default function Page() {
     return base.length ? base : ["Waiting..."];
   }, [members, spinName]);
 
+  function winnerLink(w: Member) {
+    if (w.email) return `mailto:${w.email}`;
+    return null; // fallback to copy action
+  }
+
+  async function copyId(id: string) {
+    try {
+      await navigator.clipboard.writeText(id);
+      showToast("Copied member ID");
+    } catch {
+      showToast("Copy failed");
+    }
+  }
+
   return (
     <main style={{ padding: 24, color: "#e8eefc", background: "#0b0f14", minHeight: "100vh" }}>
       <h1 style={{ margin: 0 }}>WHOP Lucky Draw</h1>
@@ -64,12 +83,13 @@ export default function Page() {
         Server-side raffle. The wheel is just a visual effect.
       </p>
 
-      <div style={{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "520px 1fr", gap: 24 }}>
         <section>
           <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
             <button onClick={loadMembers} disabled={loading} style={btn()}>
               {loading ? "Loading..." : "Load members"}
             </button>
+
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <label>Winners</label>
               <input
@@ -88,8 +108,17 @@ export default function Page() {
                 }}
               />
             </div>
-            <button onClick={draw} disabled={!members.length} style={btnPrimary()}>
-              Draw {count} winner{count > 1 ? "s" : ""}
+          </div>
+
+          {/* BIG primary button */}
+          <div style={{ marginTop: 16 }}>
+            <button
+              onClick={selectWinner}
+              disabled={!members.length}
+              style={btnBig()}
+              title={!members.length ? "Load members first" : "Select winner"}
+            >
+              🎯 Select winner
             </button>
           </div>
 
@@ -99,20 +128,49 @@ export default function Page() {
 
           <h3 style={{ marginTop: 24 }}>Winners</h3>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {winners.map((w) => (
-              <span
-                key={w.id}
-                style={{
-                  background: "#22d3ee",
-                  color: "#00323e",
-                  padding: "8px 12px",
-                  borderRadius: 999,
-                }}
-              >
-                {w.name}
-              </span>
-            ))}
+            {winners.map((w) => {
+              const href = winnerLink(w);
+              const Chip = (
+                <span
+                  key={w.id}
+                  style={{
+                    background: "#22d3ee",
+                    color: "#00323e",
+                    padding: "10px 14px",
+                    borderRadius: 999,
+                    fontWeight: 800,
+                    cursor: href ? "pointer" : "default",
+                  }}
+                  onClick={!href ? () => copyId(w.id) : undefined}
+                >
+                  {w.name}
+                </span>
+              );
+              return href ? (
+                <a key={w.id} href={href} style={{ textDecoration: "none" }} title="Contact">
+                  {Chip}
+                </a>
+              ) : (
+                Chip
+              );
+            })}
           </div>
+
+          {/* Tiny toast */}
+          {toast && (
+            <div
+              style={{
+                marginTop: 12,
+                fontSize: 12,
+                background: "rgba(255,255,255,0.08)",
+                padding: "6px 10px",
+                borderRadius: 8,
+                width: "max-content",
+              }}
+            >
+              {toast}
+            </div>
+          )}
         </section>
 
         <section style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -121,12 +179,13 @@ export default function Page() {
       </div>
 
       <p style={{ fontSize: 12, opacity: 0.6, marginTop: 20 }}>
-        Security notice: your Whop API key and member list is never exposed. 
+        Security notice: your Whop API key is never exposed.
       </p>
     </main>
   );
 }
 
+/* Styles */
 function btn() {
   return {
     padding: 12,
@@ -136,13 +195,14 @@ function btn() {
     border: "1px solid rgba(255,255,255,0.08)",
   } as const;
 }
-function btnPrimary() {
+function btnBig() {
   return {
-    padding: 12,
-    borderRadius: 10,
+    padding: "16px 18px",
+    borderRadius: 12,
     background: "linear-gradient(135deg,#5eead4,#22d3ee)",
     color: "#001316",
-    fontWeight: 700,
-    boxShadow: "0 10px 30px rgba(34,211,238,0.25)",
+    fontWeight: 900,
+    fontSize: 18,
+    boxShadow: "0 16px 40px rgba(34,211,238,0.25)",
   } as const;
 }
